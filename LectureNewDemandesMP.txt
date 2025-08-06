@@ -1,0 +1,63 @@
+// Fonction qui récupère les colonnes nécessaires (Nocli et MP) de la feuille "Mode de paiement" du Gsheet demande
+
+function lireDemandesNouveauMP() {
+  const sheetId = '1rMNa91LIWXJJopSNMtfZPl7KluaYFl_Kyz36SgqF6gI'; // ID du Google Sheet
+  const spreadsheet = SpreadsheetApp.openById(sheetId);
+  const sheet = spreadsheet.getSheetByName("Mode de paiement"); // Accès à la feuille "Mode de paiement"
+
+  if (!sheet) {
+    Logger.log("La feuille 'Mode de paiement' est introuvable.");
+    return;
+  }
+
+  const data = sheet.getDataRange().getValues(); // Récupération de toutes les données
+  const dateAuj = new Date();                    // Date actuelle
+  dateAuj.setHours(0, 0, 0, 0);                  // Heure mise à zéro pour la comparaison
+
+  const lignesTxt = []; // Liste des lignes à insérer dans le fichier texte
+
+  for (let i = 1; i < data.length; i++) {
+    const statut = data[i][5];       // Colonne "Statut de traitement"
+    const dateParam = data[i][9];    // Colonne "Date de paramétrage"
+
+    // Vérifie si le statut est "Nouveau" ou "En attente", et que la date est bien une instance de Date
+    if ((statut === "Nouveau" || statut === "En attente") && dateParam instanceof Date) {
+      const dateSansHeure = new Date(dateParam);
+      dateSansHeure.setHours(0, 0, 0, 0);
+
+      // On prend la ligne si la date est aujourd'hui ou antérieure
+      if (dateSansHeure.getTime() <= dateAuj.getTime()) {
+        const nocli = data[i][10]?.toString().trim();              // Colonne "Nocli_dépôts"
+        const codeModePaiement = data[i][13]?.toString().trim();   // Colonne "Nouvelle Valeur"
+
+        let dateCible = new Date(); // Date cible à ajuster
+
+        // Si le code mode de paiement est 03 ou 06 => on soustrait 45 jours
+        if (["03", "06"].includes(codeModePaiement)) {
+          dateCible.setDate(dateCible.getDate() - 45);
+        } else {
+          // Sinon on ajoute 45 jours
+          dateCible.setDate(dateCible.getDate() + 45);
+        }
+
+        // Formatage de la date au format "dd/MM/yyyy"
+        const formattedDate = Utilities.formatDate(dateCible, Session.getScriptTimeZone(), "dd/MM/yyyy");
+
+        // Ajout au tableau avec la structure : Nocli;CodeModePaiement;Date
+        lignesTxt.push(`${nocli};${codeModePaiement};${formattedDate}`);
+      }
+    }
+  }
+
+  // Si des lignes valides ont été trouvées, on génère un fichier texte
+  if (lignesTxt.length > 0) {
+    const contenuTxt = lignesTxt.join('\n');
+    const blob = Utilities.newBlob(contenuTxt, 'text/plain', 'modifications.txt');
+    DriveApp.createFile(blob);
+    Logger.log("Fichier .txt généré avec succès.");
+  } else {
+    Logger.log("Aucune ligne valide trouvée (filtrées par statut et date).");
+  }
+
+  return lignesTxt;
+}
